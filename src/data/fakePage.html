@@ -8,13 +8,20 @@
 </head>
 
 <body>
+    <!--
+        turnstile-min 模式会把目标页面的主文档请求替换成这个 HTML。
+        页面只保留一个 Turnstile 挂载点，避免加载目标站点原本的大量资源。
+    -->
     <div class="turnstile"></div>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback" defer></script>
     <script>
+        // Cloudflare Turnstile 官方脚本加载完成后会调用这个全局函数。
         window.onloadTurnstileCallback = function () {
             turnstile.render('.turnstile', {
+                // <site-key> 会在 solveTurnstile.min.js 中被请求体里的 siteKey 替换。
                 sitekey: '<site-key>',
                 callback: function (token) {
+                    // Puppeteer 侧通过等待这个隐藏 input 出现来判断 token 已生成。
                     var c = document.createElement('input');
                     c.type = 'hidden';
                     c.name = 'cf-response';

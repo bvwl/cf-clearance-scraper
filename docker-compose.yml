@@ -1,0 +1,14 @@
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cf-clearance-scraper:local
+    container_name: cf_scraper
+    restart: unless-stopped
+    ports:
+      - "30000:3000"
+    environment:
+      PORT: "3000"
+      browserLimit: "20"
+      timeOut: "60000"

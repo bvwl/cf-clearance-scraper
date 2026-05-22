@@ -1,4 +1,6 @@
 async function findAcceptLanguage(page) {
+  // 在浏览器页面里发一个轻量请求，读取真实浏览器环境发出的 Accept-Language。
+  // 后续调用方复用 headers 时，这个值比手写固定值更接近当前 Chromium 指纹。
   return await page.evaluate(async () => {
     const result = await fetch("https://httpbin.org/get")
       .then((res) => res.json())
@@ -13,26 +15,30 @@ async function findAcceptLanguage(page) {
 
 function getSource({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
-    if (!url) return reject("Missing url parameter");
+    if (!url) return reject("缺少 url 参数");
+
+    // WAF 会话模式和 source 模式一样使用独立 context，确保 cookies 只属于本次任务。
     const context = await global.browser
       .createBrowserContext({
         proxyServer: proxy ? `http://${proxy.host}:${proxy.port}` : undefined, // https://pptr.dev/api/puppeteer.browsercontextoptions
       })
       .catch(() => null);
-    if (!context) return reject("Failed to create browser context");
+    if (!context) return reject("创建浏览器上下文失败");
 
     let isResolved = false;
 
+    // 超时后关闭整个 context，防止页面、网络连接和 cookie 状态残留在浏览器里。
     var cl = setTimeout(async () => {
       if (!isResolved) {
         await context.close();
-        reject("Timeout Error");
+        reject("处理超时");
       }
     }, global.timeOut || 60000);
 
     try {
       const page = await context.newPage();
 
+      // 代理认证必须在页面导航前完成，否则首个请求可能直接被代理拒绝。
       if (proxy?.username && proxy?.password)
         await page.authenticate({
           username: proxy.username,
@@ -43,6 +49,7 @@ function getSource({ url, proxy }) {
       page.on("request", async (request) => request.continue());
       page.on("response", async (res) => {
         try {
+          // 等目标主文档返回 200/302 后，再读取 cookies 和发出该请求时使用的 headers。
           if (
             [200, 302].includes(res.status()) &&
             [url, url + "/"].includes(res.url())
@@ -52,10 +59,12 @@ function getSource({ url, proxy }) {
               .catch(() => {});
             const cookies = await page.cookies();
             let headers = await res.request().headers();
+            // 删除容易导致复用请求不准确或被底层 HTTP 客户端自动管理的头。
             delete headers["content-type"];
             delete headers["accept-encoding"];
             delete headers["accept"];
             delete headers["content-length"];
+            // 用浏览器真实 Accept-Language 覆盖请求头，方便调用方构造更一致的后续请求。
             headers["accept-language"] = acceptLanguage;
             await context.close();
             isResolved = true;
