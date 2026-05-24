@@ -57,6 +57,7 @@ test('同一会话中创建 Turnstile token 并返回 cookies', async () => {
         .post("/cf-clearance-scraper")
         .send({
             url: 'https://turnstile.zeroclover.io/',
+            siteKey: "0x4AAAAAAAEwzhD6pyKkgXC0",
             mode: "turnstile-session"
         })
         .expect(200)

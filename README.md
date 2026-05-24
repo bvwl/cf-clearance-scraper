@@ -108,6 +108,8 @@ Content-Type: application/json
 | `authToken` | string | 否 | 服务端配置 `authToken` 时必须传入。 |
 | `siteKey` | string | 视模式而定 | `turnstile-min` 模式必填。 |
 | `proxy` | object | 否 | 代理配置，会传给 browser context。 |
+| `cookies` | object/array | 否 | 预置 cookies，会在页面导航前写入浏览器。支持 `{ "cookieName": "cookieValue" }`，也支持直接复用接口返回的 cookies 数组。 |
+| `headers` | object | 否 | 预置请求头，会在页面导航前设置。`user-agent` 会作为浏览器 User-Agent 单独设置。 |
 
 代理字段：
 
@@ -122,9 +124,61 @@ Content-Type: application/json
 }
 ```
 
+所有成功响应都会尽量返回 `cookies` 和 `headers`，方便后续请求复用：
+
+```json
+{
+  "code": 200,
+  "cookies": [],
+  "headers": {}
+}
+```
+
+不同模式会在这个基础上额外返回 `source` 或 `token`。
+
+预置 cookies 对象格式：
+
+```json
+{
+  "cookies": {
+    "cf_clearance": "your_cf_clearance_value",
+    "ph_phc_xxx_posthog": "your_posthog_cookie_value"
+  }
+}
+```
+
+也可以直接传本服务返回的 cookies 数组：
+
+```json
+{
+  "cookies": [
+    {
+      "name": "cf_clearance",
+      "value": "your_cf_clearance_value",
+      "domain": ".example.com",
+      "path": "/"
+    }
+  ]
+}
+```
+
+预置请求头格式：
+
+```json
+{
+  "headers": {
+    "user-agent": "Mozilla/5.0 ...",
+    "accept-language": "zh-CN,zh;q=0.9",
+    "referer": "https://example.com/"
+  }
+}
+```
+
+`cookie`、`host`、`content-length` 会被自动过滤：Cookie 请通过 `cookies` 字段传入，`host` 和 `content-length` 交给浏览器和底层协议自动生成。
+
 ## 创建 Cloudflare WAF Session
 
-`waf-session` 模式会用真实浏览器访问目标页面，并返回本次会话的 cookies 与 headers。调用方可以把这些信息交给自己的 HTTP 客户端，用于后续访问同一个站点。
+`waf-session` 模式会用真实浏览器访问目标页面，并返回本次会话的 cookies 与 headers。cookies 会优先通过 CDP `Network.getAllCookies` 读取，尽量包含当前 browser context 内的完整 cookies；如果 CDP 不可用，会退回 `page.cookies()`。
 
 如果目标站点有 TLS 指纹相关保护，建议参考示例使用能自定义 JA3、User-Agent 和 headers 的请求库。
 
@@ -227,9 +281,11 @@ fetch('http://localhost:3000/cf-clearance-scraper', {
 
 ## 同时获取 Turnstile Token、Cookies 和 Headers
 
-`turnstile-session` 模式适合目标站点提交接口同时要求 Turnstile token 和浏览器会话 cookies 的情况。它会在同一个 browser context 中完整打开目标页面，等待 Turnstile token 生成，然后读取当前页面 cookies 和主文档请求 headers。
+`turnstile-session` 模式适合目标站点提交接口同时要求 Turnstile token 和浏览器会话 cookies 的情况。它会在同一个 browser context 中先完整打开目标页面获取 cookies 和主文档请求 headers，再生成 Turnstile token。
 
 这个模式和分别调用 `turnstile-max`、`waf-session` 不同：它返回的数据来自同一次浏览器访问，token、cookies、headers 的一致性更好。如果后续请求需要走代理，获取这些数据时也应该使用同一个 HTTP 代理。
+
+建议传入 `siteKey`。传入后会复用 `turnstile-min` 的方式，在同一个 browser context 里渲染最小 Turnstile 页面生成 token；不传 `siteKey` 时才会尝试从目标页面自己的 Turnstile 组件读取 token。
 
 返回结构示例：
 
@@ -261,7 +317,16 @@ fetch('http://localhost:3000/cf-clearance-scraper', {
     },
     body: JSON.stringify({
         url: 'https://turnstile.zeroclover.io/',
+        siteKey: "0x4AAAAAAAEwzhD6pyKkgXC0",
         mode: "turnstile-session",
+        cookies: {
+            cf_clearance: "your_cf_clearance_value",
+            ph_phc_tk2o4SiS2sDMPP3NP20jAzFAdHk24GhgB9qNv5DvGEj_posthog: "your_posthog_cookie_value"
+        },
+        headers: {
+            "user-agent": "Mozilla/5.0 ...",
+            "accept-language": "zh-CN,zh;q=0.9"
+        },
         proxy: {
             host: '127.0.0.1',
             port: 7890

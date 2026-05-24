@@ -1,3 +1,10 @@
+const fs = require("fs");
+const applyCookies = require("../module/applyCookies");
+const applyHeaders = require("../module/applyHeaders");
+const readAllCookies = require("../module/readAllCookies");
+const readTurnstileToken = require("../module/readTurnstileToken");
+const { cleanReusableHeaders } = require("../module/sessionData");
+
 async function findAcceptLanguage(page) {
   // 复用真实浏览器发出的 Accept-Language，避免后续请求里使用固定手写值。
   return await page.evaluate(async () => {
@@ -12,20 +19,81 @@ async function findAcceptLanguage(page) {
   });
 }
 
-function cleanReusableHeaders(headers, acceptLanguage) {
-  // 这些头通常由 HTTP 客户端或底层传输层自动生成，直接复用反而容易不一致。
-  delete headers["content-type"];
-  delete headers["accept-encoding"];
-  delete headers["accept"];
-  delete headers["content-length"];
+function mergeCookies(...cookieGroups) {
+  // 同一个 cookie 用 name/domain/path 唯一标识；后读取到的值覆盖旧值。
+  const cookieMap = new Map();
 
-  if (acceptLanguage) headers["accept-language"] = acceptLanguage;
-  return headers;
+  for (const cookies of cookieGroups) {
+    for (const cookie of cookies || []) {
+      cookieMap.set(`${cookie.name}|${cookie.domain}|${cookie.path}`, cookie);
+    }
+  }
+
+  return Array.from(cookieMap.values());
 }
 
-function turnstileSession({ url, proxy }) {
+async function injectTurnstileResponseCollector(page) {
+  // 完整页面模式使用：在目标页面脚本执行前注入轮询逻辑，从页面已有 Turnstile 组件读取 token。
+  await page.evaluateOnNewDocument(() => {
+    let token = null;
+
+    function appendToken(tokenValue) {
+      var c = document.createElement("input");
+      c.type = "hidden";
+      c.name = "cf-response";
+      c.value = tokenValue;
+
+      if (document.body) {
+        document.body.appendChild(c);
+      } else {
+        document.documentElement.appendChild(c);
+      }
+    }
+
+    async function waitForToken() {
+      while (!token) {
+        try {
+          token = window.turnstile.getResponse();
+        } catch (e) {}
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      appendToken(token);
+    }
+
+    waitForToken();
+  });
+}
+
+async function renderTurnstileWithSiteKey(page, url, siteKey) {
+  // siteKey 模式使用：保持同一个 context，但把第二次主文档请求替换成最小 Turnstile 页面。
+  await page.setRequestInterception(true);
+
+  page.on("request", async (request) => {
+    if (
+      [url, url + "/"].includes(request.url()) &&
+      request.resourceType() === "document"
+    ) {
+      await request.respond({
+        status: 200,
+        contentType: "text/html",
+        body: String(fs.readFileSync("./src/data/fakePage.html")).replace(
+          /<site-key>/g,
+          siteKey
+        ),
+      });
+    } else {
+      await request.continue();
+    }
+  });
+
+  await page.goto(url, {
+    waitUntil: "domcontentloaded",
+  });
+}
+
+function turnstileSession({ url, proxy, siteKey, cookies: inputCookies, headers: inputHeaders }) {
   return new Promise(async (resolve, reject) => {
-    // 组合模式需要真实打开目标页面，所以只需要 url；token 由页面自己的 Turnstile 组件产生。
+    // 组合模式会返回 token、cookies 和 headers。传 siteKey 时会用更稳定的最小 Turnstile 页面生成 token。
     if (!url) return reject("缺少 url 参数");
 
     // token、cookies、headers 必须来自同一个 browser context，后续复用时才更一致。
@@ -58,6 +126,9 @@ function turnstileSession({ url, proxy }) {
           password: proxy.password,
         });
 
+      await applyCookies(page, url, inputCookies);
+      await applyHeaders(page, inputHeaders);
+
       const acceptLanguage = await findAcceptLanguage(page);
 
       // 监听主文档响应，用它对应的 request headers 作为后续复用 headers 的基础。
@@ -73,57 +144,29 @@ function turnstileSession({ url, proxy }) {
         } catch (e) {}
       });
 
-      // 在目标页面脚本执行前注入 token 采集逻辑。
-      // 页面 Turnstile 完成后，getResponse() 会返回 token，再把 token 写入隐藏 input。
-      await page.evaluateOnNewDocument(() => {
-        let token = null;
+      if (!siteKey) await injectTurnstileResponseCollector(page);
 
-        function appendToken(tokenValue) {
-          var c = document.createElement("input");
-          c.type = "hidden";
-          c.name = "cf-response";
-          c.value = tokenValue;
-
-          if (document.body) {
-            document.body.appendChild(c);
-          } else {
-            document.documentElement.appendChild(c);
-          }
-        }
-
-        async function waitForToken() {
-          while (!token) {
-            try {
-              token = window.turnstile.getResponse();
-            } catch (e) {}
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
-          appendToken(token);
-        }
-
-        waitForToken();
-      });
-
-      // 完整加载目标页面。和 turnstile-min 不同，这里不替换页面内容，因为 cookies 通常来自真实页面流程。
-      const response = await page.goto(url, {
-        waitUntil: "domcontentloaded",
-      });
+      // 先真实加载目标页面，用这个流程产生目标站点 cookies，并记录主文档请求 headers。
+      const response = await page.goto(url, { waitUntil: "load" });
 
       if (!mainRequestHeaders && response) {
         mainRequestHeaders = await response.request().headers();
       }
 
-      await page.waitForSelector('[name="cf-response"]', {
-        timeout: 60000,
-      });
+      // Cloudflare 可能在 load 后通过跳转或异步流程写入 cookie，短暂等待能减少过早读取。
+      await page
+        .waitForNetworkIdle({ idleTime: 1000, timeout: 5000 })
+        .catch(() => {});
 
-      const token = await page.evaluate(() => {
-        try {
-          return document.querySelector('[name="cf-response"]').value;
-        } catch (e) {
-          return null;
-        }
-      });
+      const realPageCookies = await readAllCookies(page, [url, page.url()]);
+
+      if (siteKey) {
+        // 有些站点无法通过页面上的 window.turnstile.getResponse() 拿 token。
+        // 这时复用 turnstile-min 的思路，在同一 context 里用 siteKey 渲染最小页面生成 token。
+        await renderTurnstileWithSiteKey(page, url, siteKey);
+      }
+
+      const token = await readTurnstileToken(page, 60000);
 
       if (!token || token.length < 10) {
         await context.close();
@@ -131,14 +174,16 @@ function turnstileSession({ url, proxy }) {
         return reject("获取 token 失败");
       }
 
-      // token 出现后再读取 cookies，确保拿到的是挑战流程完成后的同一上下文状态。
-      const cookies = await page.cookies();
-      const headers = cleanReusableHeaders(mainRequestHeaders || {}, acceptLanguage);
+      // token 出现后再读取一次 cookies，并与真实页面阶段的 cookies 合并。
+      // 这样不会因为后续最小页面渲染流程覆盖当前页面状态而丢掉真实页面阶段产生的 cf_clearance。
+      const tokenPageCookies = await readAllCookies(page, [url, page.url()]);
+      const sessionCookies = mergeCookies(realPageCookies, tokenPageCookies);
+      const reusableHeaders = cleanReusableHeaders(mainRequestHeaders || {}, acceptLanguage);
 
       isResolved = true;
       clearInterval(cl);
       await context.close();
-      return resolve({ token, cookies, headers });
+      return resolve({ token, cookies: sessionCookies, headers: reusableHeaders });
     } catch (e) {
       if (!isResolved) {
         await context.close();

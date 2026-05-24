@@ -1,3 +1,8 @@
+const applyCookies = require("../module/applyCookies");
+const applyHeaders = require("../module/applyHeaders");
+const readAllCookies = require("../module/readAllCookies");
+const { cleanReusableHeaders } = require("../module/sessionData");
+
 async function findAcceptLanguage(page) {
   // 在浏览器页面里发一个轻量请求，读取真实浏览器环境发出的 Accept-Language。
   // 后续调用方复用 headers 时，这个值比手写固定值更接近当前 Chromium 指纹。
@@ -13,7 +18,7 @@ async function findAcceptLanguage(page) {
   });
 }
 
-function getSource({ url, proxy }) {
+function getSource({ url, proxy, cookies, headers }) {
   return new Promise(async (resolve, reject) => {
     if (!url) return reject("缺少 url 参数");
 
@@ -44,6 +49,10 @@ function getSource({ url, proxy }) {
           username: proxy.username,
           password: proxy.password,
         });
+
+      await applyCookies(page, url, cookies);
+      await applyHeaders(page, headers);
+
       let acceptLanguage = await findAcceptLanguage(page);
       await page.setRequestInterception(true);
       page.on("request", async (request) => request.continue());
@@ -57,19 +66,12 @@ function getSource({ url, proxy }) {
             await page
               .waitForNavigation({ waitUntil: "load", timeout: 5000 })
               .catch(() => {});
-            const cookies = await page.cookies();
-            let headers = await res.request().headers();
-            // 删除容易导致复用请求不准确或被底层 HTTP 客户端自动管理的头。
-            delete headers["content-type"];
-            delete headers["accept-encoding"];
-            delete headers["accept"];
-            delete headers["content-length"];
-            // 用浏览器真实 Accept-Language 覆盖请求头，方便调用方构造更一致的后续请求。
-            headers["accept-language"] = acceptLanguage;
+            const responseCookies = await readAllCookies(page, [url, page.url()]);
+            let responseHeaders = cleanReusableHeaders(await res.request().headers(), acceptLanguage);
             await context.close();
             isResolved = true;
             clearInterval(cl);
-            resolve({ cookies, headers });
+            resolve({ cookies: responseCookies, headers: responseHeaders });
           }
         } catch (e) {}
       });

@@ -1,4 +1,8 @@
-function getSource({ url, proxy }) {
+const applyCookies = require("../module/applyCookies");
+const applyHeaders = require("../module/applyHeaders");
+const { readSessionData } = require("../module/sessionData");
+
+function getSource({ url, proxy, cookies, headers }) {
   return new Promise(async (resolve, reject) => {
     if (!url) return reject("缺少 url 参数");
 
@@ -12,6 +16,7 @@ function getSource({ url, proxy }) {
     if (!context) return reject("创建浏览器上下文失败");
 
     let isResolved = false;
+    let documentRequestHeaders = null;
 
     // endpoint 级别超时保护。Cloudflare 挑战或页面加载卡住时，关闭 context 并返回错误。
     var cl = setTimeout(async () => {
@@ -31,6 +36,9 @@ function getSource({ url, proxy }) {
           password: proxy.password,
         });
 
+      await applyCookies(page, url, cookies);
+      await applyHeaders(page, headers);
+
       await page.setRequestInterception(true);
       page.on("request", async (request) => request.continue());
       page.on("response", async (res) => {
@@ -44,11 +52,13 @@ function getSource({ url, proxy }) {
             await page
               .waitForNavigation({ waitUntil: "load", timeout: 5000 })
               .catch(() => {});
+            documentRequestHeaders = await res.request().headers();
             const html = await page.content();
+            const session = await readSessionData(page, documentRequestHeaders, null, [url, page.url()]);
             await context.close();
             isResolved = true;
             clearInterval(cl);
-            resolve(html);
+            resolve({ source: html, ...session });
           }
         } catch (e) {}
       });

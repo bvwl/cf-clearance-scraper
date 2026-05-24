@@ -23,6 +23,7 @@ const schema = {
                 "username": { "type": "string" },
                 "password": { "type": "string" }
             },
+            "required": ["host", "port"],
             "additionalProperties": false
         },
         // url 使用 ajv-formats 的 uri 校验，要求调用方传完整 URL。
@@ -33,6 +34,45 @@ const schema = {
         // 当服务端配置了 process.env.authToken 时，请求体必须带相同 authToken。
         "authToken": {
             "type": "string"
+        },
+        // 可选的预置请求头，会在页面导航前设置；user-agent 会通过 page.setUserAgent 单独处理。
+        "headers": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        // 可选的预置 cookies：
+        // 1. { cookieName: cookieValue }
+        // 2. [{ name, value, domain, path, ... }]，可直接复用接口返回的 cookies 数组。
+        "cookies": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "value": { "type": "string" },
+                            "url": { "type": "string" },
+                            "domain": { "type": "string" },
+                            "path": { "type": "string" },
+                            "expires": { "type": "number" },
+                            "httpOnly": { "type": "boolean" },
+                            "secure": { "type": "boolean" },
+                            "sameSite": { "type": "string" }
+                        },
+                        "required": ["name", "value"],
+                        "additionalProperties": true
+                    }
+                }
+            ]
         },
         // turnstile-min 模式需要显式传入站点的 siteKey。
         "siteKey": {
