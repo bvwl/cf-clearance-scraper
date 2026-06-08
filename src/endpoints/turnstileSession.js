@@ -6,6 +6,8 @@ const readAllCookies = require("../module/readAllCookies");
 const readTurnstileToken = require("../module/readTurnstileToken");
 const { cleanReusableHeaders } = require("../module/sessionData");
 
+const fakePageTemplate = String(fs.readFileSync("./src/data/fakePage.html"));
+
 async function findAcceptLanguage(page) {
   // 复用真实浏览器发出的 Accept-Language，避免后续请求里使用固定手写值。
   return await page.evaluate(async () => {
@@ -77,10 +79,7 @@ async function renderTurnstileWithSiteKey(page, url, siteKey) {
       await request.respond({
         status: 200,
         contentType: "text/html",
-        body: String(fs.readFileSync("./src/data/fakePage.html")).replace(
-          /<site-key>/g,
-          siteKey
-        ),
+        body: fakePageTemplate.replace(/<site-key>/g, siteKey),
       });
     } else {
       await request.continue();

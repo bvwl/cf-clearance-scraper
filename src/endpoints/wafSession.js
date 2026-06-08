@@ -55,8 +55,6 @@ function getSource({ url, proxy, cookies, headers }) {
       await applyHeaders(page, headers);
 
       let acceptLanguage = await findAcceptLanguage(page);
-      await page.setRequestInterception(true);
-      page.on("request", async (request) => request.continue());
       page.on("response", async (res) => {
         try {
           // 等目标主文档返回 200/302 后，再读取 cookies 和发出该请求时使用的 headers。

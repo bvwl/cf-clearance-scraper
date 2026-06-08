@@ -1,4 +1,4 @@
-const TOKEN_SELECTOR = '[name="cf-response"], [name="cf-turnstile-response"]';
+const TOKEN_SELECTOR = '[name="cf-response"]';
 
 function isTransientFrameError(error) {
   const message = error?.message || String(error || "");
@@ -46,9 +46,7 @@ async function readTurnstileToken(page, timeout = 60000) {
       });
 
       const token = await page.evaluate(() => {
-        const input =
-          document.querySelector('[name="cf-response"]') ||
-          document.querySelector('[name="cf-turnstile-response"]');
+        const input = document.querySelector('[name="cf-response"]');
         return input ? input.value : null;
       });
 

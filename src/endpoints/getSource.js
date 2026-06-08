@@ -40,8 +40,6 @@ function getSource({ url, proxy, cookies, headers }) {
       await applyCookies(page, url, cookies);
       await applyHeaders(page, headers);
 
-      await page.setRequestInterception(true);
-      page.on("request", async (request) => request.continue());
       page.on("response", async (res) => {
         try {
           // 只处理目标 URL 的主响应，避免 CSS/JS/图片等子资源响应提前触发 resolve。
