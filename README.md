@@ -73,7 +73,7 @@ http://localhost:30000/cf-clearance-scraper
 ### 从 GitHub 源码运行
 
 ```bash
-git clone https://github.com/zfcsoftware/cf-clearance-scraper
+git clone https://gitee.com/qq2201101122/cf-clearance-scraper.git
 cd cf-clearance-scraper
 npm install
 npm run start
