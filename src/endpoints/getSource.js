@@ -1,5 +1,6 @@
 const applyCookies = require("../module/applyCookies");
 const applyHeaders = require("../module/applyHeaders");
+const closeBrowserContext = require("../module/closeBrowserContext");
 const { readSessionData } = require("../module/sessionData");
 
 function getSource({ url, proxy, cookies, headers }) {
@@ -21,7 +22,7 @@ function getSource({ url, proxy, cookies, headers }) {
     // endpoint 级别超时保护。Cloudflare 挑战或页面加载卡住时，关闭 context 并返回错误。
     var cl = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
+        await closeBrowserContext(context, "source 模式处理超时");
         reject("处理超时");
       }
     }, global.timeOut || 60000);
@@ -55,9 +56,9 @@ function getSource({ url, proxy, cookies, headers }) {
             documentRequestHeaders = await res.request().headers();
             const html = await page.content();
             const session = await readSessionData(page, documentRequestHeaders, null, [url, page.url()]);
-            await context.close();
             isResolved = true;
-            clearInterval(cl);
+            clearTimeout(cl);
+            await closeBrowserContext(context, "source 模式处理完成");
             resolve({ source: html, ...session });
           }
         } catch (e) {}
@@ -67,8 +68,8 @@ function getSource({ url, proxy, cookies, headers }) {
       });
     } catch (e) {
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
+        clearTimeout(cl);
+        await closeBrowserContext(context, "source 模式处理异常");
         reject(e.message);
       }
     }

@@ -1,6 +1,7 @@
 const fs = require("fs");
 const applyCookies = require("../module/applyCookies");
 const applyHeaders = require("../module/applyHeaders");
+const closeBrowserContext = require("../module/closeBrowserContext");
 const readAllCookies = require("../module/readAllCookies");
 const readTurnstileToken = require("../module/readTurnstileToken");
 const { cleanReusableHeaders } = require("../module/sessionData");
@@ -111,7 +112,7 @@ function turnstileSession({ url, proxy, siteKey, cookies: inputCookies, headers:
     // 超时兜底：目标页面、挑战脚本或代理卡住时关闭 context，避免页面残留。
     var cl = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
+        await closeBrowserContext(context, "turnstile-session 模式处理超时");
         reject("处理超时");
       }
     }, global.timeOut || 60000);
@@ -169,8 +170,8 @@ function turnstileSession({ url, proxy, siteKey, cookies: inputCookies, headers:
       const token = await readTurnstileToken(page, 60000);
 
       if (!token || token.length < 10) {
-        await context.close();
-        clearInterval(cl);
+        clearTimeout(cl);
+        await closeBrowserContext(context, "turnstile-session 模式获取到无效 token");
         return reject("获取 token 失败");
       }
 
@@ -181,13 +182,13 @@ function turnstileSession({ url, proxy, siteKey, cookies: inputCookies, headers:
       const reusableHeaders = cleanReusableHeaders(mainRequestHeaders || {}, acceptLanguage);
 
       isResolved = true;
-      clearInterval(cl);
-      await context.close();
+      clearTimeout(cl);
+      await closeBrowserContext(context, "turnstile-session 模式处理完成");
       return resolve({ token, cookies: sessionCookies, headers: reusableHeaders });
     } catch (e) {
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
+        clearTimeout(cl);
+        await closeBrowserContext(context, "turnstile-session 模式处理异常");
         reject(e.message);
       }
     }

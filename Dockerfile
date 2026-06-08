@@ -1,4 +1,4 @@
-FROM node:latest
+FROM node:20-bookworm
 
 RUN apt-get update && apt-get install -y \
     wget \
@@ -15,8 +15,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm update
-RUN npm install
+RUN npm ci
 RUN npm i -g pm2
 COPY . .
 

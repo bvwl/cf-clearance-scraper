@@ -1,5 +1,7 @@
 const readTurnstileToken = require("../src/module/readTurnstileToken");
 const { isTransientFrameError } = require("../src/module/readTurnstileToken");
+const { isSelectorTimeoutError } = require("../src/module/readTurnstileToken");
+const { TOKEN_SELECTOR } = require("../src/module/readTurnstileToken");
 
 test("识别挑战页面 frame 重建产生的临时错误", () => {
   expect(
@@ -17,11 +19,55 @@ test("识别挑战页面 frame 重建产生的临时错误", () => {
   expect(isTransientFrameError(new Error("普通业务错误"))).toBe(false);
 });
 
+test("识别等待 cf-response selector 的普通超时", () => {
+  expect(
+    isSelectorTimeoutError(
+      new Error(
+        'Waiting for selector `[name="cf-response"]` failed: Waiting failed: 5000ms exceeded'
+      )
+    )
+  ).toBe(true);
+
+  expect(
+    isSelectorTimeoutError(
+      new Error(
+        'Waiting for selector `[name="cf-response"], [name="cf-turnstile-response"]` failed: Waiting failed: 5000ms exceeded'
+      )
+    )
+  ).toBe(true);
+
+  expect(isSelectorTimeoutError(new Error("普通业务错误"))).toBe(false);
+});
+
 test("读取 token 时遇到临时 frame 错误会重试", async () => {
   const page = {
     waitForSelector: jest
       .fn()
       .mockRejectedValueOnce(new Error("frame got detached"))
+      .mockResolvedValueOnce(null),
+    evaluate: jest.fn(async () => "token-1234567890"),
+  };
+
+  const token = await readTurnstileToken(page, 2000);
+
+  expect(token).toBe("token-1234567890");
+  expect(page.waitForSelector).toHaveBeenCalledTimes(2);
+  expect(page.waitForSelector).toHaveBeenLastCalledWith(
+    TOKEN_SELECTOR,
+    expect.any(Object)
+  );
+  expect(page.evaluate).toHaveBeenCalledTimes(1);
+});
+
+test("读取 token 时遇到 selector 超时会继续轮询", async () => {
+  const page = {
+    waitForSelector: jest
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          'Waiting for selector `[name="cf-response"]` failed: Waiting failed: 5000ms exceeded'
+        )
+      )
       .mockResolvedValueOnce(null),
     evaluate: jest.fn(async () => "token-1234567890"),
   };

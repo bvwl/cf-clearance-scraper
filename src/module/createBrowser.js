@@ -49,6 +49,9 @@ async function createBrowser() {
         const { browser } = await connect({
             headless: false,
             turnstile: true,
+            customConfig: process.env.CHROME_BIN
+                ? { chromePath: process.env.CHROME_BIN }
+                : {},
             connectOption: { defaultViewport: null },
             disableXvfb: false,
         })

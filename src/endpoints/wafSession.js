@@ -1,5 +1,6 @@
 const applyCookies = require("../module/applyCookies");
 const applyHeaders = require("../module/applyHeaders");
+const closeBrowserContext = require("../module/closeBrowserContext");
 const readAllCookies = require("../module/readAllCookies");
 const { cleanReusableHeaders } = require("../module/sessionData");
 
@@ -35,7 +36,7 @@ function getSource({ url, proxy, cookies, headers }) {
     // 超时后关闭整个 context，防止页面、网络连接和 cookie 状态残留在浏览器里。
     var cl = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
+        await closeBrowserContext(context, "waf-session 模式处理超时");
         reject("处理超时");
       }
     }, global.timeOut || 60000);
@@ -68,9 +69,9 @@ function getSource({ url, proxy, cookies, headers }) {
               .catch(() => {});
             const responseCookies = await readAllCookies(page, [url, page.url()]);
             let responseHeaders = cleanReusableHeaders(await res.request().headers(), acceptLanguage);
-            await context.close();
             isResolved = true;
-            clearInterval(cl);
+            clearTimeout(cl);
+            await closeBrowserContext(context, "waf-session 模式处理完成");
             resolve({ cookies: responseCookies, headers: responseHeaders });
           }
         } catch (e) {}
@@ -81,8 +82,8 @@ function getSource({ url, proxy, cookies, headers }) {
       });
     } catch (e) {
       if (!isResolved) {
-        await context.close();
-        clearInterval(cl);
+        clearTimeout(cl);
+        await closeBrowserContext(context, "waf-session 模式处理异常");
         reject(e.message);
       }
     }

@@ -1,5 +1,6 @@
 const applyCookies = require("../module/applyCookies");
 const applyHeaders = require("../module/applyHeaders");
+const closeBrowserContext = require("../module/closeBrowserContext");
 const readTurnstileToken = require("../module/readTurnstileToken");
 const { readSessionData } = require("../module/sessionData");
 
@@ -23,7 +24,7 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
     // 全局超时兜底。目标页面加载、挑战脚本或代理长时间无响应时，关闭 context 并返回错误。
     var cl = setTimeout(async () => {
       if (!isResolved) {
-        await context.close();
+        await closeBrowserContext(context, "turnstile-max 模式处理超时");
         reject("处理超时");
       }
     }, global.timeOut || 60000);
@@ -81,20 +82,20 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
       // 注入脚本拿到 token 后会创建隐藏 input；公共读取函数会处理挑战过程中的 frame 重建。
       const token = await readTurnstileToken(page, 60000);
       isResolved = true;
-      clearInterval(cl);
+      clearTimeout(cl);
       // Cloudflare token 正常情况下长度远大于 10；过短值按无效 token 处理。
       if (!token || token.length < 10) {
-        await context.close();
+        await closeBrowserContext(context, "turnstile-max 模式获取到无效 token");
         return reject("获取 token 失败");
       }
       const session = await readSessionData(page, documentRequestHeaders, null, [url, page.url()]);
-      await context.close();
+      await closeBrowserContext(context, "turnstile-max 模式处理完成");
       return resolve({ token, ...session });
     } catch (e) {
       if (!isResolved) {
         // 出错时也释放 context，防止页面残留影响后续请求和并发计数。
-        await context.close();
-        clearInterval(cl);
+        clearTimeout(cl);
+        await closeBrowserContext(context, "turnstile-max 模式处理异常");
         reject(e.message);
       }
     }
