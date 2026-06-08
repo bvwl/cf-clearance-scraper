@@ -12,6 +12,8 @@ global.browserLength = 0
 global.browserLimit = Number(process.env.browserLimit) || 20
 // 全局请求超时时间，既用于 HTTP server，也会被各 endpoint 用作页面处理超时。
 global.timeOut = Number(process.env.timeOut || 60000)
+// Turnstile token 独立等待时间。目标站点长期不返回 token 时，尽早结束页面可降低 CPU 占用。
+global.tokenTimeOut = Number(process.env.tokenTimeOut || global.timeOut || 60000)
 
 app.use(bodyParser.json({ limit: '2mb' }))
 app.use(bodyParser.urlencoded({ extended: true, limit: '2mb' }))

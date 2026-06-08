@@ -12,3 +12,4 @@ services:
       PORT: "3000"
       browserLimit: "20"
       timeOut: "60000"
+      tokenTimeOut: "15000"

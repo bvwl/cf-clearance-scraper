@@ -167,7 +167,7 @@ function turnstileSession({ url, proxy, siteKey, cookies: inputCookies, headers:
         await renderTurnstileWithSiteKey(page, url, siteKey);
       }
 
-      const token = await readTurnstileToken(page, 60000);
+      const token = await readTurnstileToken(page, global.tokenTimeOut || 60000);
 
       if (!token || token.length < 10) {
         clearTimeout(cl);

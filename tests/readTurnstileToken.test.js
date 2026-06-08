@@ -79,6 +79,22 @@ test("读取 token 时遇到 selector 超时会继续轮询", async () => {
   expect(page.evaluate).toHaveBeenCalledTimes(1);
 });
 
+test("selector 已存在但 token 为空时会等待后再重试", async () => {
+  const page = {
+    waitForSelector: jest.fn().mockResolvedValue(null),
+    evaluate: jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("token-1234567890"),
+  };
+
+  const token = await readTurnstileToken(page, 2000);
+
+  expect(token).toBe("token-1234567890");
+  expect(page.waitForSelector).toHaveBeenCalledTimes(2);
+  expect(page.evaluate).toHaveBeenCalledTimes(2);
+});
+
 test("非临时错误会直接抛出", async () => {
   const page = {
     waitForSelector: jest.fn(async () => {

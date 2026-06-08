@@ -2,7 +2,6 @@ const applyCookies = require("../module/applyCookies");
 const applyHeaders = require("../module/applyHeaders");
 const closeBrowserContext = require("../module/closeBrowserContext");
 const readTurnstileToken = require("../module/readTurnstileToken");
-const { readSessionData } = require("../module/sessionData");
 
 function solveTurnstileMax({ url, proxy, cookies, headers }) {
   return new Promise(async (resolve, reject) => {
@@ -19,8 +18,6 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
     if (!context) return reject("创建浏览器上下文失败");
 
     let isResolved = false;
-    let documentRequestHeaders = null;
-
     // 全局超时兜底。目标页面加载、挑战脚本或代理长时间无响应时，关闭 context 并返回错误。
     var cl = setTimeout(async () => {
       if (!isResolved) {
@@ -41,17 +38,6 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
 
       await applyCookies(page, url, cookies);
       await applyHeaders(page, headers);
-
-      page.on("response", async (res) => {
-        try {
-          if (
-            !documentRequestHeaders &&
-            res.request().resourceType() === "document"
-          ) {
-            documentRequestHeaders = await res.request().headers();
-          }
-        } catch (e) {}
-      });
 
       // 在页面任何业务脚本执行前注入轮询逻辑。
       // 页面上的 turnstile 对象可用后，持续调用 getResponse()，直到拿到 token。
@@ -80,7 +66,7 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
       });
 
       // 注入脚本拿到 token 后会创建隐藏 input；公共读取函数会处理挑战过程中的 frame 重建。
-      const token = await readTurnstileToken(page, 60000);
+      const token = await readTurnstileToken(page, global.tokenTimeOut || 60000);
       isResolved = true;
       clearTimeout(cl);
       // Cloudflare token 正常情况下长度远大于 10；过短值按无效 token 处理。
@@ -88,9 +74,8 @@ function solveTurnstileMax({ url, proxy, cookies, headers }) {
         await closeBrowserContext(context, "turnstile-max 模式获取到无效 token");
         return reject("获取 token 失败");
       }
-      const session = await readSessionData(page, documentRequestHeaders, null, [url, page.url()]);
       await closeBrowserContext(context, "turnstile-max 模式处理完成");
-      return resolve({ token, ...session });
+      return resolve({ token });
     } catch (e) {
       if (!isResolved) {
         // 出错时也释放 context，防止页面残留影响后续请求和并发计数。

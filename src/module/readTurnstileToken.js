@@ -53,6 +53,8 @@ async function readTurnstileToken(page, timeout = 60000) {
       });
 
       if (token) return token;
+
+      await wait(500);
     } catch (error) {
       lastError = error;
 

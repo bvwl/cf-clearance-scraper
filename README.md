@@ -73,7 +73,7 @@ http://localhost:30000/cf-clearance-scraper
 ### 从 GitHub 源码运行
 
 ```bash
-git clone https://gitee.com/qq2201101122/cf-clearance-scraper.git
+git clone https://github.com/zfcsoftware/cf-clearance-scraper
 cd cf-clearance-scraper
 npm install
 npm run start
@@ -86,6 +86,7 @@ npm run start
 | `PORT` | `3000` | HTTP 服务监听端口。 |
 | `browserLimit` | `20` | 同时运行的 browser context 最大数量，超过后返回 429。 |
 | `timeOut` | `60000` | 请求处理超时时间，单位是毫秒。 |
+| `tokenTimeOut` | 同 `timeOut` | 等待 Turnstile token 的独立超时时间，单位是毫秒。目标站点迟迟不返回 token 时可调低以减少 CPU 占用。 |
 | `authToken` | 空 | 如果配置了该值，请求体必须传入相同的 `authToken`，否则返回 401。 |
 | `SKIP_LAUNCH` | 空 | 测试时可设为 `true`，跳过真实浏览器启动。 |
 | `NODE_ENV` | 空 | 设为 `development` 时会导出 Express app，方便测试使用。 |
